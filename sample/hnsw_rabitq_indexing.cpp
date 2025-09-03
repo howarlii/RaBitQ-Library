@@ -61,9 +61,9 @@ int main(int argc, char* argv[]) {
     data_type centroids;
     gt_type cluster_id;
 
-    rabitqlib::load_vecs<float, data_type>(data_file, data);
-    rabitqlib::load_vecs<float, data_type>(centroid_file, centroids);
-    rabitqlib::load_vecs<uint32_t, gt_type>(cid_file, cluster_id);
+    rabitqlib::load_something<float, data_type>(data_file, data);
+    rabitqlib::load_something<float, data_type>(centroid_file, centroids);
+    rabitqlib::load_something<uint32_t, gt_type>(cid_file, cluster_id);
 
     size_t num_points = data.rows();
     size_t dim = data.cols();

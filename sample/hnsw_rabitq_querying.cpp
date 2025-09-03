@@ -1,15 +1,20 @@
 #include <iostream>
 #include <vector>
 
+#include <gflags/gflags.h>
+
 #include "index/hnsw/hnsw.hpp"
 #include "utils/io.hpp"
 #include "utils/stopw.hpp"
 
-std::vector<size_t> efs = {10,  20,  40,  50,  60,  80,  100, 150,  170,  190, 200,
-                           250, 300, 400, 500, 600, 700, 800, 1000, 1500, 2000};
+DEFINE_int32(num_threads, 1, "Number of threads to use");
+
+// std::vector<size_t> efs = {10,  20,  40,  50,  60,  80,  100, 150,  170,  190, 200,
+//                            250, 300, 400, 500, 600, 700, 800, 1000, 1500, 2000};
+std::vector<size_t> efs = {400};
 
 size_t test_round = 3;
-size_t topk = 10;
+size_t topk = 100;
 
 using PID = rabitqlib::PID;
 using index_type = rabitqlib::hnsw::HierarchicalNSW;
@@ -22,18 +27,22 @@ int main(int argc, char* argv[]) {
                   << "arg1: path for index \n"
                   << "arg2: path for query file, format .fvecs\n"
                   << "arg3: path for groundtruth file format .ivecs\n"
-                  << "arg4: metric type (\"l2\" or \"ip\")\n";
+                  << "arg4: metric type (\"l2\" or \"ip\")\n"
+                  << "arg5: number of threads\n";
         exit(1);
     }
+
+    gflags::ParseCommandLineFlags(&argc, &argv, true);
 
     char* index_file = argv[1];
     char* query_file = argv[2];
     char* gt_file = argv[3];
+    // int FLAGS_num_threads = std::stoi(argv[5]);
 
     data_type query;
     gt_type gt;
-    rabitqlib::load_vecs<float, data_type>(query_file, query);
-    rabitqlib::load_vecs<uint32_t, gt_type>(gt_file, gt);
+    rabitqlib::load_something<float, data_type>(query_file, query);
+    rabitqlib::load_something<uint32_t, gt_type>(gt_file, gt);
     size_t nq = query.rows();
     size_t total_count = nq * topk;
 
@@ -73,7 +82,7 @@ int main(int argc, char* argv[]) {
             auto start = std::chrono::high_resolution_clock::now();
 
             std::vector<std::vector<std::pair<float, PID>>> res =
-                hnsw.search(query.data(), nq, topk, ef, 1);
+                hnsw.search(query.data(), nq, topk, ef, FLAGS_num_threads);
 
             auto end = std::chrono::high_resolution_clock::now();
 
@@ -106,10 +115,9 @@ int main(int argc, char* argv[]) {
     auto avg_qps = rabitqlib::horizontal_avg(all_qps);
     auto avg_recall = rabitqlib::horizontal_avg(all_recall);
 
-    std::cout << "EF\tQPS\tRecall\t"
-
+    std::cout << "EF,num_threads,QPS,Recall,"
                  "\n";
     for (size_t i = 0; i < avg_qps.size(); ++i) {
-        std::cout << efs[i] << '\t' << avg_qps[i] << '\t' << avg_recall[i] << '\t' << '\n';
+        std::cout << efs[i] << "," << FLAGS_num_threads << "," << avg_qps[i] << "," << avg_recall[i] << "," << '\n';
     }
 }

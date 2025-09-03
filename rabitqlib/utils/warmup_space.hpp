@@ -5,6 +5,25 @@
 #include <cstddef>
 #include <cstdint>
 
+// Helper function to compute popcount for AVX512 vectors with fallback
+inline __m512i avx512_popcnt_epi64(__m512i x_vec) {
+#ifdef __AVX512VPOPCNTDQ__
+    // Use hardware instruction if available
+    return _mm512_popcnt_epi64(x_vec);
+#else
+    // Fallback implementation using scalar popcount
+    uint64_t x_arr[8];
+    _mm512_storeu_si512(reinterpret_cast<__m512i*>(x_arr), x_vec);
+
+    uint64_t popcnt_arr[8];
+    for (int k = 0; k < 8; k++) {
+        popcnt_arr[k] = __builtin_popcountll(x_arr[k]);
+    }
+
+    return _mm512_loadu_si512(reinterpret_cast<const __m512i*>(popcnt_arr));
+#endif
+}
+
 template <uint32_t b_query>
 inline float warmup_ip_x0_q(
     const uint64_t* data,   // pointer to data blocks (each 64 bits)
@@ -35,7 +54,7 @@ inline float warmup_ip_x0_q(
 
         // Compute popcount for each 64-bit block in x_vec using the AVX512 VPOPCNTDQ
         // instruction. (Ensure you compile with the proper flags for VPOPCNTDQ.)
-        __m512i popcnt_x_vec = _mm512_popcnt_epi64(x_vec);
+        __m512i popcnt_x_vec = avx512_popcnt_epi64(x_vec);
         ppc_vec = _mm512_add_epi64(ppc_vec, popcnt_x_vec);
 
         // For accumulating the weighted popcounts per block.
@@ -59,7 +78,7 @@ inline float warmup_ip_x0_q(
             // Compute bitwise AND of data blocks and corresponding query words.
             __m512i and_vec = _mm512_and_si512(x_vec, q_vec);
             // Compute popcount on each lane.
-            __m512i popcnt_and = _mm512_popcnt_epi64(and_vec);
+            __m512i popcnt_and = avx512_popcnt_epi64(and_vec);
 
             // Multiply by the weighting factor (1 << j) for this query position.
             const uint64_t shift = 1ULL << j;

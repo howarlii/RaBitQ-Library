@@ -8,3 +8,4 @@ add_executable(ivf_rabitq_querying ivf_rabitq_querying.cpp)
 
 add_executable(hnsw_rabitq_indexing hnsw_rabitq_indexing.cpp)
 add_executable(hnsw_rabitq_querying hnsw_rabitq_querying.cpp)
+target_link_libraries(hnsw_rabitq_querying PRIVATE ${GFLAGS_LIBRARIES})

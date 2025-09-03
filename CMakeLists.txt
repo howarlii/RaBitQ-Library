@@ -12,4 +12,6 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 SET(CMAKE_CXX_FLAGS  "-Wall -Ofast -Wextra -lrt -march=native -fpic -fopenmp -ftree-vectorize -fexceptions")
 
+find_package(GFlags)
+
 add_subdirectory(sample)

@@ -77,4 +77,19 @@ void load_bin(const char* filename, M& row_mat) {
     std::cout << "Rows " << rows << " Cols " << cols << '\n' << std::flush;
     input.close();
 }
+
+// load based on file extension
+template <typename T, class M>
+void load_something(const char* filename, M& row_mat) {
+    std::string filename_str(filename);
+    if (filename_str.rfind("vecs") == filename_str.size() - 4) {
+        load_vecs<T, M>(filename, row_mat);
+    } else if (filename_str.rfind("bin") == filename_str.size() - 3) {
+        load_bin<T, M>(filename, row_mat);
+    } else {
+        std::cerr << "Unsupported file format: " << filename << std::endl;
+        exit(1);
+    }
+}
+
 }  // namespace rabitqlib
