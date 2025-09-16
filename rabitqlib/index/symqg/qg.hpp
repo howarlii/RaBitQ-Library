@@ -29,6 +29,12 @@
 
 namespace rabitqlib::symqg {
 
+struct QueryRuntimeMetrics {
+    size_t fast_bitsum = 0;
+    size_t acc_bitsum = 0;
+    size_t total_comp_cnt = 0;
+};
+
 template <typename T = float>
 class QuantizedGraph {
     friend class QGBuilder;
@@ -104,7 +110,7 @@ class QuantizedGraph {
 
     void update_qg(PID, const std::vector<AnnCandidate<T>>&);
 
-    void update_results(buffer::SearchBuffer<T>&, HashBasedBooleanSet&, const T*);
+    void update_results(buffer::SearchBuffer<T>&, HashBasedBooleanSet&, const T*, QueryRuntimeMetrics&) const;
 
     void scan_neighbors(
         const BatchQuery<T>&,
@@ -112,7 +118,8 @@ class QuantizedGraph {
         T*,
         buffer::SearchBuffer<T>&,
         HashBasedBooleanSet&,
-        size_t
+        size_t,
+        QueryRuntimeMetrics&
     ) const;
 
    public:
@@ -145,7 +152,7 @@ class QuantizedGraph {
     void set_ef(size_t);
 
     /* search and copy results to KNN */
-    void search(const T* __restrict__ query, uint32_t knn, uint32_t* __restrict__ results);
+    void search(const T* __restrict__ query, uint32_t knn, uint32_t* __restrict__ results, QueryRuntimeMetrics& metrics);
 };
 
 template <typename T>
@@ -257,7 +264,7 @@ inline void QuantizedGraph<T>::set_ef(size_t cur_ef) {
  */
 template <typename T>
 inline void QuantizedGraph<T>::search(
-    const T* __restrict__ query, uint32_t k, uint32_t* __restrict__ results
+    const T* __restrict__ query, uint32_t k, uint32_t* __restrict__ results, QueryRuntimeMetrics& metrics
 ) {
     std::vector<T> rotated_query(padded_dim_);
     rotator_->rotate(query, rotated_query.data());
@@ -282,14 +289,15 @@ inline void QuantizedGraph<T>::search(
         vis->set(cur_node);
 
         q_obj.set_g_add(raw_dist_func_(query, get_vector(cur_node), dim_));
+        metrics.acc_bitsum += padded_dim_ * 32;
 
         scan_neighbors(
-            q_obj, cur_node, est_dist.data(), search_pool, *vis, this->degree_bound_
+            q_obj, cur_node, est_dist.data(), search_pool, *vis, this->degree_bound_, metrics
         );
         res_pool.insert(cur_node, q_obj.g_add());
     }
 
-    update_results(res_pool, *vis, query);
+    update_results(res_pool, *vis, query, metrics);
     visited_list_pool_->release_vis_list(vis);
     res_pool.copy_results(results);
 }
@@ -303,12 +311,16 @@ void QuantizedGraph<T>::scan_neighbors(
     T* est_dist,
     buffer::SearchBuffer<T>& search_pool,
     HashBasedBooleanSet& vis,
-    size_t cur_degree
+    size_t cur_degree,
+    QueryRuntimeMetrics& metrics
 ) const {
     const auto* batch_data = get_batch_data(data_id);
     for (size_t i = 0; i < cur_degree; i += fastscan::kBatchSize) {
         qg_batch_estdist(batch_data, q_obj, padded_dim_, est_dist + i);
         batch_data += QGBatchDataMap<T>::data_bytes(padded_dim_);
+
+        metrics.total_comp_cnt += fastscan::kBatchSize;
+        metrics.fast_bitsum += fastscan::kBatchSize * padded_dim_;
     }
 
     const PID* ptr_nb = get_neighbors(data_id);
@@ -328,15 +340,15 @@ void QuantizedGraph<T>::scan_neighbors(
 
 template <typename T>
 inline void QuantizedGraph<T>::update_results(
-    buffer::SearchBuffer<T>& result_pool, HashBasedBooleanSet& vis, const T* query
-) {
+    buffer::SearchBuffer<T>& result_pool, HashBasedBooleanSet& vis, const T* query, QueryRuntimeMetrics& metrics
+) const {
     if (result_pool.is_full()) {
         return;
     }
 
     auto data = result_pool.data();
     for (auto record : data) {
-        PID* ptr_nb = get_neighbors(record.id);
+        const PID* ptr_nb = get_neighbors(record.id);
         for (uint32_t i = 0; i < this->degree_bound_; ++i) {
             PID cur_neighbor = ptr_nb[i];
             if (!vis.get(cur_neighbor)) {
@@ -344,6 +356,7 @@ inline void QuantizedGraph<T>::update_results(
                 result_pool.insert(
                     cur_neighbor, raw_dist_func_(query, get_vector(cur_neighbor), dim_)
                 );
+                metrics.acc_bitsum += padded_dim_ * 32;
             }
         }
         if (result_pool.is_full()) {
@@ -402,6 +415,7 @@ inline void QuantizedGraph<T>::find_candidates(
 
     /* Current version of fast scan compute 32 distances */
     std::vector<T> est_dist(degree_bound_);  // estimated distances
+    QueryRuntimeMetrics metrics;
     while (tmp_pool.has_next()) {
         auto cur_candi = tmp_pool.pop();
         if (vis.get(cur_candi)) {
@@ -410,7 +424,7 @@ inline void QuantizedGraph<T>::find_candidates(
         vis.set(cur_candi);
         auto cur_degree = degrees[cur_candi];
         q_obj.set_g_add(raw_dist_func_(query, get_vector(cur_candi), dim_));
-        scan_neighbors(q_obj, cur_candi, est_dist.data(), tmp_pool, vis, cur_degree);
+        scan_neighbors(q_obj, cur_candi, est_dist.data(), tmp_pool, vis, cur_degree, metrics);
         if (cur_candi != cur_id) {
             results.emplace_back(cur_candi, q_obj.g_add());
         }

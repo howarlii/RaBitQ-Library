@@ -1,10 +1,11 @@
+#!/bin/bash
 
-
-datasets=("msmarco10M")
+datasets=("gist")
+# datasets=("msmarco10M")
 # datasets=("laion100m")
-B_values=(4 2 8 1)
+B_values=(2)
 
-data_dir=/workspace/dev/SACQ/data/
+data_dir=../SACQ/data/
 
 for dataset in "${datasets[@]}"; do
     # Loop through each B value
@@ -12,9 +13,10 @@ for dataset in "${datasets[@]}"; do
     base_data_path=${data_path}_base.fvecs
     # base_data_path=/data/share/users/pqyin/data/laion400m/base.100M.fbin
     for B in "${B_values[@]}"; do
-        # ./bin/hnsw_rabitq_indexing $base_data_path ${data_path}_centroid_16.fvecs  ${data_path}_cluster_id_16.ivecs 64 128 ${B} $data_dir/$dataset/hnsw16_b${B}_rbq.index l2
         # ./bin/symqg_indexing $base_data_path 64 128 $data_dir/$dataset/sympg_rbq.index
+        # numactl -N 0 -l ./bin/symqg_querying $data_dir/$dataset/sympg_rbq.index ${data_path}_query.fvecs ${data_path}_groundtruth.ivecs -num_threads=0 -output_csv_path=../SACQ/results/saq/qps_${dataset}_sympgrbq_b${B}.csv
 
+        ./bin/hnsw_rabitq_indexing $base_data_path ${data_path}_centroid_16.fvecs  ${data_path}_cluster_id_16.ivecs 64 128 ${B} $data_dir/$dataset/hnsw16_b${B}_rbq.index l2
         numactl -N 0 -l ./bin/hnsw_rabitq_querying ../SACQ/data/${dataset}/hnsw16_b${B}_rbq.index ../SACQ/data/${dataset}/${dataset}_query.fvecs ../SACQ/data/${dataset}/${dataset}_groundtruth.ivecs l2 -num_threads=0 -output_csv_path=../SACQ/results/saq/qps_${dataset}_hnswrbq_b${B}.csv
 
         if [ "$DEBUG" == 1 ]; then
